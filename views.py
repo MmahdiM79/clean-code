@@ -1,7 +1,11 @@
+from utils import create_payment_post, new_user
+
+
 @login_required
 @transaction.commit_on_success
 def create_w(request, id):
-    if Register.objects.filter(id=id).exists() and Register.objects.get(id=id).sender == request.sender:
+    register = objects.filter(id=id)
+    if register not None and register.sender == request.sender:
         return create_response([id], user_friendly=True)
     else:
         return HttpResponseRedirect("/")
@@ -13,25 +17,7 @@ def map_reduce_task(request, ids):
     if not registers:
         return HttpResponseRedirect("/")
     else:
-        for register in registers:
-            if ids:  # Using optimized queries:
-                objects = register.objects.filter(id__in=ids).values_list("id", flat=True)
-            else:
-                objects = register.objects.all().values_list("id", flat=True)
-
-            t = 0
-            task_map = []
-
-            def chunks(objects, length):  # Defining method with a generator in a loop.
-                for i in xrange(0, len(objects), length):
-                    yield objects[i:i+length]
-
-            for chunk in chunks(objects, 20):
-                countdown = 5*t
-                t += 1
-                tasks_map.append(request_by_mapper(register, chunk, countdown, datetime.now()))
-        g = group(*tasks_map)
-        reduce_task = chain(g, create_request_by_reduce_async.s(tasks_map))()
+        reduce_tasks(registers, ids)
 
 
 @login_required
@@ -45,53 +31,14 @@ def create_payment(request):
         currency = request.POST.get('currency')
         logger.debug(currency)
         policy = InsurancePolicy.objects.get(id=policy_id)
-        try:
-            payment = policy.payment_id
-            # if payment is NULL then exeption
-            payment.id
-        except Exception as e:
-            # everything is ok, new user
-            # create payment with coinpayment
-            post_params = {
-                'amount': policy.fee,
-                'currency1': 'BTC',
-                'currency2': currency,
-                'buyer_email':
-                    request.user.email,  # TODO set request.user.mail,
-                'item_name': 'Policy for ' + policy.exchange.name,
-                'item_number': policy.id
-            }
-            try:
-                client = CryptoPayments(public_key, private_key)
-                transaction = client.createTransaction(post_params)
-                logger.debug(transaction)  # FOR DEBUG
-                if len(transaction) == 0:
-                    raise Exception
-            except Exception as e:
-                logger.error(e)
-                message = 'Payment gateway is down'
-                responseData = {'error': True, 'message': message}
-                return JsonResponse(responseData)
+        create_payment_post(request)
 
             try:
                 try:
-                    payment = UserPayments(
-                        status=0,
-                        update_date=datetime.datetime.now(),
-                        amount=transaction.amount,
-                        address=transaction.address,
-                        payment=transaction.txn_id,
-                        confirms_needed=transaction.confirms_needed,
-                        timeout=transaction.timeout,
-                        status_url=transaction.status_url,
-                        qrcode_url=transaction.qrcode_url,
-                        currency=currency)
+                    payment = new_user(currency, transaction)
 
                     try:
-                        default_email = os.environ.get('DJANGO_EMAIL_DEFAULT_EMAIL')
-                        subject = "Website: You’re one step away from being secured"
-                        message = render_to_string('first_email.html', {'user': policy.user, 'payment': payment})
-                        send_mail(subject, message, default_email, [policy.user.email])
+                        send_mail()
                     except Exception as e:
                         logger.error('Error on sending first email: ', e)
 
@@ -180,13 +127,15 @@ def create_payment(request):
                     policy.save()
 
                     try:
-                        default_email = os.environ.get('DJANGO_EMAIL_DEFAULT_EMAIL')
+                        default_email = os.environ.get(
+                            'DJANGO_EMAIL_DEFAULT_EMAIL')
                         subject = "Website: You’re one step away from being secured"
-                        message = render_to_string('first_email.html', {'user': policy.user, 'payment': payment})
-                        send_mail(subject, message, default_email, [policy.user.email])
+                        message = render_to_string(
+                            'first_email.html', {'user': policy.user, 'payment': payment})
+                        send_mail(subject, message, default_email,
+                                  [policy.user.email])
                     except Exception:
                         logger.error('Error on sending first email')
-
 
                 except Exception as e:
                     message = "Error contacting with the Gateway"
@@ -221,13 +170,6 @@ def create_payment(request):
 
                     response = JsonResponse(post_params)
                     return response
-
-                    message = "Payment Exist"
-                    response = JsonResponse({
-                        'status': 'false',
-                        'message': message
-                    })
-                    return response
             elif payment.status == PaymentStatus.PENDING:
                 logger.info('status Pending, do nothing')
                 transaction = policy.payment_id
@@ -258,7 +200,7 @@ def create_payment(request):
             response = JsonResponse(post_params)
             return response
 
-        
+
 @staff_member_required
 def backup_to_csv(request):
     data = {}
@@ -355,6 +297,7 @@ def backup_to_csv(request):
                 return JsonResponse(responseData)
         except Exception:
             return response
+
 
 @csrf_protect
 @login_required
@@ -492,7 +435,7 @@ def dashboard(request):
         policy_number_tag = "Crypto"
         try:
             context_policy_number = policy_number_tag + \
-                                    str((policy_numbers[current_id])['id'])
+                str((policy_numbers[current_id])['id'])
         except (IndexError, KeyError) as error:
             logger.error(
                 "An error has occured while trying to get policy number.\

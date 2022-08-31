@@ -2,7 +2,7 @@
 
 class Payment(models.Model):
     is_paid = models.BooleanField(default=False)
-    payment_agent = models.CharField(max_length=30)    
+    payment_agent = models.CharField(max_length=30)
 
     # WHAT?!
     def get_payment_agent(self):
@@ -17,16 +17,9 @@ class Payment(models.Model):
         if self.payment_agent:
             return self.payment_agent
 
-        if self.provider1.filter(type=1).count():
-            self.payment_agent = u"Provider1"
-        elif self.qprovider2.filter(type=1).count():
-            self.payment_agent = u"AO Provider2"
-        elif self.provider3.filter(type=1).count():
-            self.payment_agent = u"Provider3"
-        elif self.provider4.count():
-            self.payment_agent = u"Complex Provider 4 Name With Surname"
-        else:
-            self.payment_agent = u"Provider5 Full Company-Name"
+        for i in range(5):
+            c = self.__getattribute__('provider'+str(i), None).filter(type=1).count()
+            self.payment_agent = u"Provider"+str(i)
 
         self.save()
         return self.payment_agent
