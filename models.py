@@ -19,7 +19,8 @@ class Payment(models.Model):
 
         for i in range(5):
             c = self.__getattribute__('provider'+str(i), None).filter(type=1).count()
-            self.payment_agent = u"Provider"+str(i)
+            if c > 0:
+                self.payment_agent = u"Provider"+str(i)
 
         self.save()
         return self.payment_agent
